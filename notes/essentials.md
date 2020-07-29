@@ -168,3 +168,336 @@ Now, with redux, we can break the steps into more detail:
 - Store notifies all listeners of the UI (subscribed components) that the store has been updated.
 - Each UI component that needs store data checks to see if parts of the state they need have changed.
 - Each component whose data has changed forces a re-render with the new data. 
+
+# Redux App Structure
+
+Using a Redux Store requires a different structure from traditional React applications.
+
+## App Contents
+
+In general, the store is included as `store.js` in the `app` directory of `src`.
+
+The separate components which inherit state from the store are in `features` of the `src` directory.
+
+`App.js` is still our top-level React component, and `index.js` is the starting point for the application.
+
+## Creating the Redux Store
+
+`store.js` can look like this:
+
+```jsx
+import { configureStore } from '@reduxjs/toolkit';
+import counterReducer from '../features/counter/counterSlice';
+
+export default configureStore({
+  reducer: {
+  	counter: counterReducer
+  }
+});
+```
+Redux stores are created with the `configureStore` function and must be passed a reducer. Since the app will have many features, and each feature may have its own reducer function, we pass in an object with all of the different reducers stored as key-value pairs. The key is the name of the reducer and the value is reducer function.
+
+In this example, we pass in a `counter` key with the value `counterReducer`. We are saying we want the `state` object in the Redux store to have a `counter` property, and that `counterReducer` is in charge of handling any dispatched actions to the `counter` state.
+
+### Redux Slices
+
+A **redux slice** is a collection of Redux reducer logic and actions for a single feature in an app. This explains why the counter reducer function is named `counterSlice`.
+
+```jsx
+import { configureStore } from '@reduxjs/toolkit';
+import usersReducer from '../features/users/usersSlice';
+import postsReducer from '../features/posts/postsSlice';
+
+export default configureStore({
+  reducer: {
+  	users: usersReducer,
+  	posts: postsReducer
+  }
+});
+```
+With this example, we've set up state for `users` and `posts` on the store's `state` object. You could say that `users` and `posts` are each 'slices' of the state in the application.
+
+### Creating Slice Reducers and Actions
+
+Let's look at `counterSlice` and break it down.
+
+```js
+import { createSlice } from '@reduxjs/toolkit';
+
+export const counterSlice = createSlice({
+  name: 'counter',
+  initialState: {
+    value: 0,
+  },
+  reducers: {
+    increment: state => {
+      // Redux Toolkit allows us to write "mutating" logic in reducers. It
+      // doesn't actually mutate the state because it uses the Immer library,
+      // which detects changes to a "draft state" and produces a brand new
+      // immutable state based off those changes
+      state.value += 1;
+    },
+    decrement: state => {
+      state.value -= 1;
+    },
+    incrementByAmount: (state, action) => {
+      state.value += action.payload;
+    },
+  },
+});
+
+export const { increment, decrement, incrementByAmount } = counterSlice.actions;
+
+// The function below is called a thunk and allows us to perform async logic. It
+// can be dispatched like a regular action: `dispatch(incrementAsync(10))`. This
+// will call the thunk with the `dispatch` function as the first argument. Async
+// code can then be executed and other actions can be dispatched
+export const incrementAsync = amount => dispatch => {
+  setTimeout(() => {
+    dispatch(incrementByAmount(amount));
+  }, 1000);
+};
+
+// The function below is called a selector and allows us to select a value from
+// the state. Selectors can also be defined inline where they're used instead of
+// in the slice file. For example: `useSelector((state) => state.counter.value)`
+export const selectCount = state => state.counter.value;
+
+export default counterSlice.reducer;
+```
+There are three different types of action types associated with `counter`: increment, decrement, and increment by a certain amount. There does not appear to be any action objects inside of `counterSlice`, though, so we're left wondering: where are the action creators and objects defined?
+
+The `createSlice` function is a function of Redux Toolkit which generates action type strings, action creator functions, and even action objects. All you have to do is type a name for the slice, write an object that has the reducer functions in it, and it automatically generates the action code accordingly.
+
+The `name` string is used as the first part of each action type. So, increment's action type would be `counter/increment`, for instance. In the action object, it looks like so:
+
+```js
+const object = {
+	type: 'counter/increment'
+};
+```
+So, the `counterSlice` automatically has an `actions` property with the action creator functions as the same name as each reducer function.
+
+### Rules of Reducers
+
+Friendly reminder! Reducers follow these special rules:
+
+- They only calculate new state value based on two arguments: `state && action`, the latter being an action object created by an action creator function.
+- They are not allowed to modify existing state. They must make a copy of the state and then perform the change on the copy, reassigning the store's state to the return value of the reducer after.
+- They cannot do async logic or side effects.
+
+This makes reducers functional, meaning that given the same arguments the return value will always be the same. They should be pure and without side effects. The rules of reducers are in place to make your life easier, as side effects make the application unreliable. Being able to rely on the same return value and no mutating of the state object from outside of the `store` makes our Redux applications consistent.
+
+#### Creating Copies Easily with `createSlice`
+
+Sure, the rules of reducers are good, but doesn't it take a lot of time to manually create copies of the state whenever we need to update it?
+
+Yes, but we don't need to do it by hand. `createSlice` can do it for us if we want.
+
+The `immer` library that `createSlice` uses makes it possible. It provides a tool named `Proxy` which wraps provided data and lets you write code to 'mutate' the wrapped data. The difference here is that Immer keeps track of all the changes that are made, and then uses that list of changes to return a safely immutably updated value to return to the store. 
+
+Here's a by-hand example:
+
+```jsx
+function hand(state, action) {
+	return {
+		...state,
+		first: {
+			...state.first,
+			second: {
+				...state.first.second,
+				[action.someId]: {
+					...state.first.second[action.someId],
+					fourth: action.someValue
+				}
+			}
+		}
+	}
+}
+``` 
+That looks pretty similar to callback hell. See how messy it gets with deeply nested objects in state? Let's refactor it with Immer.
+
+```jsx
+function reducerWithImmer(state, action) {
+	state.first.second[action.someId].fourth = action.someValue;
+}
+```
+> You must have Redux Toolkit in order to write mutating logic with Immer without actually mutating state.
+
+### Writing Async Logic with Thunks
+
+A **thunk** is a kind of Redux function that can contain async logic. Thunks are written in two functions:
+
+- The inside thunk function, which gets `dispatch` and `getState` as arguments.
+- The outside creator function, which creates and returns the thunk function.
+
+Here's a thunk.
+
+```jsx
+export const incrementAsync = amount => dispatch => {
+  setTimeout(() => {
+    dispatch(incrementByAmount(amount));
+  }, 1000);
+};
+```
+This is a thunk. The `dispatch` invocation only occurs after 1 second. This is asynchronous. 
+
+Here's another example:
+
+```jsx
+const fetchById = userId => {
+	return async (dispatch, getState) => {
+		try {
+				const user = await userAPI.fetchById(userId);
+				dispatch(userLoaded(user));
+			} catch (err) {
+				// something went wrong!
+			}
+	};
+};
+```
+The outside creator function is `fetchById` and the thunk function is `async (dispatch, getState)`. The function is returned from here and invoked by the `store` object: `store.dispatch(incrementAsync(5))`.
+
+### The React Counter Component
+
+Let's look at `Counter.js`.
+
+```jsx
+import React, { useState } from 'react';
+import { useSelector, useDispatch } from 'react-redux';
+import {
+  decrement,
+  increment,
+  incrementByAmount,
+  incrementAsync,
+  selectCount,
+} from './counterSlice';
+import styles from './Counter.module.css';
+
+export function Counter() {
+  const count = useSelector(selectCount);
+  const dispatch = useDispatch();
+  const [incrementAmount, setIncrementAmount] = useState('2');
+
+  return (
+    <div>
+      <div className={styles.row}>
+        <button
+          className={styles.button}
+          aria-label="Increment value"
+          onClick={() => dispatch(increment())}
+        >
+          +
+        </button>
+        <span className={styles.value}>{count}</span>
+        <button
+          className={styles.button}
+          aria-label="Decrement value"
+          onClick={() => dispatch(decrement())}
+        >
+          -
+        </button>
+      </div>
+      <div className={styles.row}>
+        <input
+          className={styles.textbox}
+          aria-label="Set increment amount"
+          value={incrementAmount}
+          onChange={e => setIncrementAmount(e.target.value)}
+        />
+        <button
+          className={styles.button}
+          onClick={() =>
+            dispatch(incrementByAmount(Number(incrementAmount) || 0))
+          }
+        >
+          Add Amount
+        </button>
+        <button
+          className={styles.asyncButton}
+          onClick={() => dispatch(incrementAsync(Number(incrementAmount) || 0))}
+        >
+          Add Async
+        </button>
+      </div>
+    </div>
+  );
+}
+```
+The current counter value is not being stored as state in `counter`. Rather, it is being retrieved and stored in the `count` variable with the `useSelector` function invocation. This function is retrieving `state.counter.value` from the Redux store.
+
+> Selector functions take `state` as an argument and return some part of the state value.
+
+```jsx
+export const selectCount = state => state.counter.value;
+```
+As one can see, `selectCount` retrives the `state.counter.value` value. We must outsource the selector to talk to the Redux store because components cannot talk to the store directly, since we cannot import the store into component files.
+
+Additionally, since we do not have access to the `store` object in our components, we cannot dispatch actions. The `useDispatch` hook allows us to retrieve the `dispatch` object with all the possible action creators from the store.
+
+```jsx
+const dispatch = useDispatch();
+
+// now, we can do the following in components:
+
+<a 
+	onClick={() => dispatch(increment())}
+/>
+```
+### How to Determine where State should be
+
+Global state should be stored in the Redux store and local state should be stored in the component state.
+
+But how do we know where to put `input` state? Or other state not mentioned so far?
+
+Here are some guiding questions:
+- Do other parts of the app care about this data? (Global)
+- Do you need to be able to create further derived data based on this original data? (Global)
+- Is the same data driving multiple components? (Global)
+- Is there value to you in being able to restore the state to a given point of time? (Global)
+- Do you cache the data? (Global)
+- Do you want to keep the data consistent while hotloading the UI? (Global)
+
+Most form state should be kept in the component. The flow for form control with Redux is:
+
+- Store the data in form components as state.
+- Dispatch Redux actions to update the store when the user is done with the form.
+
+### Providing the Store
+
+Our components communicate with the store through `useSelector` and `useDispatch` hooks. How is the store provided to the hooks?
+
+The answer lies in `index.js`, the starting point of the application.
+
+```jsx
+import React from 'react'
+import ReactDOM from 'react-dom'
+import './index.css'
+import App from './App'
+import store from './app/store'
+import { Provider } from 'react-redux'
+import * as serviceWorker from './serviceWorker'
+
+ReactDOM.render(
+  <Provider store={store}>
+    <App />
+  </Provider>,
+  document.getElementById('root')
+);
+```
+`Provider` is a component which passes the Redux store to the hooks behind the scenes.
+
+## Summary
+
+Wow! Redux is **complicated** at first glance. I'm excited to get started on developing muscle memory with the various paradigms in Redux. Here's a basic summary of these notes so far:
+
+1. `configureStore` is used to create the Redux store.
+- It must be passed a `reducer` function.
+- It automatically sets up the store with reliable defaults.
+2. Redux logic is organized into files called `slices`.
+- Slices contain reducer logic and actions for a specific feature.
+- `createSlice` generates action creators and action types for each individual reducer function provided.
+3. Reducers follow rules.
+- No side effects allowed.
+- Cannot mutate state directly, must make copy and update copy.
+- No async logic allowed. 

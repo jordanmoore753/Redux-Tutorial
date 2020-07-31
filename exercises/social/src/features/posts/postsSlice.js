@@ -1,35 +1,16 @@
-import { createSlice } from '@reduxjs/toolkit';
-import { nanoid } from '@reduxjs/toolkit';
+import { createSlice, nanoid, createAsyncThunk } from '@reduxjs/toolkit';
+import { client } from '../../api/client';
 
-const initialState = [
-  { id: '1',
-    title: 'First Post',
-    content: 'Hello!',
-    user: '0',
-    date: new Date().toISOString(),
-    reactions: {
-      thumbsUp: 0,
-      hooray: 0,
-      heart: 0,
-      rocket: 0,
-      eyes: 0
-    }
-  },
-  {
-    id: '2',
-    title: 'Second Post',
-    content: 'More text.',
-    user: '2',
-    date: new Date().toISOString(),
-    reactions: {
-      thumbsUp: 0,
-      hooray: 0,
-      heart: 0,
-      rocket: 0,
-      eyes: 0
-    }
-  }
-];
+const initialState = {
+  posts: [],
+  status: 'idle',
+  error: null
+};
+
+export const fetchPosts = createAsyncThunk('posts/fetchPosts', async () => {
+  const response = await client.get('/fakeApi/posts');
+  return response.posts;
+});
 
 const postsSlice = createSlice({
   name: 'posts',
@@ -37,9 +18,7 @@ const postsSlice = createSlice({
   reducers: {
     postAdded: {
       reducer(state, action) {
-        const newState = state.slice(0);
-        newState.push(action.payload);
-        return newState;
+        state.posts.push(action.payload);
       },
 
       prepare(title, content, userId) {
@@ -64,7 +43,7 @@ const postsSlice = createSlice({
 
     postUpdated(state, action) {
       const { id, title, content } = action.payload;
-      const existingPost = state.find(post => post.id === id);
+      const existingPost = state.posts.find(post => post.id === id);
 
       if (existingPost) {
         existingPost.title = title;
@@ -74,18 +53,48 @@ const postsSlice = createSlice({
 
     postRemoved(state, action) {
       const { id } = action.payload;
-      return state.filter(post => post.id !== id);
+
+      for (let i = 0; i < state.posts.length; i += 1) {
+        if (state.posts[i].id === id) {
+          state.posts.splice(i, 1);
+          return;
+        }
+      }
     },
 
     reactionAdded(state, action) {
       const { postId, reaction } = action.payload;
-      const existingPost = state.find(post => post.id === postId);
+      state.status = 'idle';
+
+      const existingPost = state.posts.find(post => post.id === postId);
+
       if (existingPost) {
         existingPost.reactions[reaction] += 1;
       }
+    }
+  },
+
+  extraReducers: {
+    [fetchPosts.pending]: (state, action) => {
+      state.status = 'loading';
+    },
+
+    [fetchPosts.fulfilled]: (state, action) => {
+      state.status = 'succeeded';
+      state.posts = state.posts.concat(action.payload);
+    },
+
+    [fetchPosts.rejected]: (state, action) => {
+      state.status = 'failed';
+      state.error = action.error.message;
     }
   }
 });
 
 export const { postAdded, postUpdated, postRemoved, reactionAdded } = postsSlice.actions;
+export const selectAllPosts = state => state.posts.posts;
+export const selectPostById = (state, postId) => {
+  return state.posts.posts.find(post => post.id === postId);
+};
+
 export default postsSlice.reducer;

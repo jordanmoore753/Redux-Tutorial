@@ -501,3 +501,16 @@ Wow! Redux is **complicated** at first glance. I'm excited to get started on dev
 - No side effects allowed.
 - Cannot mutate state directly, must make copy and update copy.
 - No async logic allowed. 
+
+# Async with Thunks
+
+Since reducers cannot have async logic inside of them, there needs to be another way to incorporate the use of asynchronous logic alongside the updating of state.
+
+**Thunks** are the solution to this problem. A thunk is a special kind of function which accepts the arguments `dispatch && getState`. The `dispatch` is the connection to the `store` that lets the thunk dispatch an action and update the state. The normal flow of a thunk is:
+
+1. Thunk function is invoked.
+2. A start action is dispatched before the asynchronous request. This indicates the state of the request: finished, in progress, cancelled, etc. This is optional but recommended to disable duplicate requests.
+3. The async request is made.
+4. The async response is evaluated and an appropriate **action** is dispatched in response. 
+
+Of course, these steps are optional. But this is the normal, common flow of a thunk function.

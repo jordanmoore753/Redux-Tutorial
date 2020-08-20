@@ -9,8 +9,9 @@ export const PostExcerpt = ({ post, onDeleteClick }) => {
     <article className="post-excerpt" id={post.id} key={post.id}>
       <h3>{post.title}</h3>
       <PostAuthor userId={post.user} />
-      <p>{post.content.substring(0, 100)}</p>
       <TimeAgo timestamp={post.date} />
+      <p>{post.content.substring(0, 100)}</p>
+      <ReactionButtons post={post} />
       <Link to={`/posts/${post.id}`} className="button muted-button">
         View Post
       </Link>
@@ -19,7 +20,6 @@ export const PostExcerpt = ({ post, onDeleteClick }) => {
         onClick={onDeleteClick}
       >Delete Post
       </button>
-      <ReactionButtons post={post} />
     </article>
 	);
 };
